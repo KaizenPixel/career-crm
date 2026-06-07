@@ -1,4 +1,4 @@
-```python
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
@@ -32,6 +32,11 @@ class FollowUp(BaseModel):
     status: str
     type: str
 
+class UpdateApplication(BaseModel):
+    company: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = None
+
 app = FastAPI()
 @app.get("/")
 def home():
@@ -58,6 +63,27 @@ def add_application(app_data: Application):
     applications.append(new_application)
     return new_application
 
+@app.put("/applications/{application_id}")
+def update_application(application_id: int, updated_data: UpdateApplication):
+    for app in applications:
+        if app["id"] == application_id:
+            if updated_data.company is not None:
+                app["company"] = updated_data.company
+            if updated_data.role is not None:
+                app["role"] = updated_data.role
+            if updated_data.status is not None:
+                app["status"] = updated_data.status
+            return app
+    return {"error": "Application not found"}
+
+@app.delete("/applications/{application_id}")
+def delete_application(application_id: int):
+    for index, app in enumerate(applications):
+        if app["id"] == application_id:
+            applications.pop(index)
+            return {"message": f"Application {application_id} deleted"}
+    return {"error": "Application not found"}
+
 recruiters = [
     {"id": 1, "name": "Rahul Sharma", "company": "Microsoft", "email": "rahul@microsoft.com"},
     {"id": 2, "name": "Priya Mehta", "company": "Google", "email": "priya@google.com"},
@@ -77,6 +103,24 @@ def add_recruiter(rec_data: Recruiter):
     }
     recruiters.append(new_recruiter)
     return new_recruiter
+
+@app.put("/recruiters/{recruiter_id}")
+def update_recruiter(recruiter_id: int, updated_data: Recruiter):
+    for rec in recruiters:
+        if rec["id"] == recruiter_id:
+            rec["name"] = updated_data.name
+            rec["company"] = updated_data.company
+            rec["email"] = updated_data.email
+            return rec
+    return {"error": "Recruiter not found"}
+
+@app.delete("/recruiters/{recruiter_id}")
+def delete_recruiter(recruiter_id: int):
+    for index, rec in enumerate(recruiters):
+        if rec["id"] == recruiter_id:
+            recruiters.pop(index)
+            return {"message": f"Recruiter {recruiter_id} deleted"}
+    return {"error": "Recruiter not found"}
 
 interviews = [
     {"id": 1, "company": "Microsoft", "round": "Interview", "date": "2024-07-15", "status": "Scheduled"},
@@ -98,6 +142,26 @@ def add_interview(interview_data: Interview):
     }
     interviews.append(new_interview)
     return new_interview
+
+@app.put("/interviews/{interview_id}")
+def update_interview(interview_id: int, updated_data: Interview):
+    for interview in interviews:
+        if interview["id"] == interview_id:
+            interview["company"] = updated_data.company
+            interview["round"] = updated_data.round
+            interview["date"] = updated_data.date
+            interview["status"] = updated_data.status
+            return interview
+    return {"error": "Interview not found"}
+
+@app.delete("/interviews/{interview_id}")
+def delete_interview(interview_id: int):
+    for index, interview in enumerate(interviews):
+        if interview["id"] == interview_id:
+            interviews.pop(index)
+            return {"message": f"Interview {interview_id} deleted"}
+    return {"error": "Interview not found"}
+
 tasks = [
     {"id": 1, "task_name": "Prepare for Microsoft interview", "status": "Pending", "due_date": "2024-07-10", "priority": "High"},
     {"id": 2, "task_name": "Follow up with Google recruiter", "status": "Completed", "due_date": "2024-07-15", "priority": "Medium"},
@@ -118,6 +182,25 @@ def add_task(task_data: Task):
     }
     tasks.append(new_task)
     return new_task
+
+@app.put("/tasks/{task_id}")
+def update_task(task_id: int, updated_data: Task):
+    for task in tasks:
+        if task["id"] == task_id:
+            task["task_name"] = updated_data.task_name
+            task["status"] = updated_data.status
+            task["due_date"] = updated_data.due_date
+            task["priority"] = updated_data.priority
+            return task
+    return {"error": "Task not found"}
+
+@app.delete("/tasks/{task_id}")
+def delete_task(task_id: int):
+    for index, task in enumerate(tasks):
+        if task["id"] == task_id:
+            tasks.pop(index)
+            return {"message": f"Task {task_id} deleted"}
+    return {"error": "Task not found"}
 
 followups = [
     {"id": 1, "company": "Microsoft", "date": "2024-07-12", "notes": "Send thank you email after interview", "status": "Pending","type": "Email"}, 
@@ -141,6 +224,22 @@ def add_follow_up(followup_data: FollowUp):
     followups.append(new_followup)
     return new_followup
 
+@app.put("/followups/{followup_id}")
+def update_follow_up(followup_id: int, updated_data: FollowUp):
+    for followup in followups:
+        if followup["id"] == followup_id:
+            followup["company"] = updated_data.company
+            followup["date"] = updated_data.date
+            followup["notes"] = updated_data.notes
+            followup["status"] = updated_data.status
+            followup["type"] = updated_data.type
+            return followup
+    return {"error": "Follow-up not found"}
 
-
-```
+@app.delete("/followups/{followup_id}")
+def delete_follow_up(followup_id: int):
+    for index, followup in enumerate(followups):
+        if followup["id"] == followup_id:
+            followups.pop(index)
+            return {"message": f"Follow-up {followup_id} deleted"}
+    return {"error": "Follow-up not found"}
