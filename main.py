@@ -1,245 +1,469 @@
-
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional
-
-class Application(BaseModel):
-    company: str
-    role: str
-    status: str
-
-class Recruiter(BaseModel):
-    name: str
-    company: str
-    email: str
-
-class Interview(BaseModel):
-    company: str
-    round: str
-    date: str
-    status: str
-
-class Task(BaseModel):
-    task_name: str
-    status: str
-    due_date: str
-    priority: str
-
-class FollowUp(BaseModel):
-    company: str
-    date: str
-    notes: str
-    status: str
-    type: str
-
-class UpdateApplication(BaseModel):
-    company: Optional[str] = None
-    role: Optional[str] = None
-    status: Optional[str] = None
-
-app = FastAPI()
-@app.get("/")
-def home():
-    return {"message": "Crm is running!"}   
+from typing import Literal, Optional
 
 
-applications = [
-    {"id": 1, "company": "Microsoft", "role": "SDE Intern", "status": "Applied"},
-    {"id": 2, "company": "Google", "role": "Backend Intern", "status": "Interview"},
+# ----- Allowed values -----
+
+ApplicationStatus = Literal[
+    "Applied",
+    "Viewed",
+    "Under Review",
+    "Shortlisted",
+    "Interview Scheduled",
+    "Selected",
+    "Rejected",
 ]
 
+ActivityType = Literal[
+    "notification",
+    "status_update",
+    "interview_confirmation",
+    "task",
+    "follow_up",
+    "reminder",
+]
+
+ActivityStatus = Literal["open", "completed", "cancelled"]
+Audience = Literal["candidate", "recruiter", "both", "internal"]
+InterviewFormat = Literal["online", "offline"]
+
+
+# ----- Request models -----
+
+class ApplicationCreate(BaseModel):
+    company: str
+    role: str
+    candidate_id: Optional[int] = None
+    job_id: Optional[int] = None
+
+
+class ApplicationStatusUpdate(BaseModel):
+    status: ApplicationStatus
+    note: Optional[str] = None
+
+
+class InterviewScheduleRequest(BaseModel):
+    date: str
+    time: str
+    format: InterviewFormat
+    interviewer: str
+    location: Optional[str] = None
+    meeting_link: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ActivityCreate(BaseModel):
+    activity_type: ActivityType = "notification"
+    title: str
+    message: str
+    audience: Audience = "both"
+    due_date: Optional[str] = None
+
+
+class ActivityUpdate(BaseModel):
+    status: Optional[ActivityStatus] = None
+    message: Optional[str] = None
+
+
+# ----- App and sample data -----
+
+app = FastAPI(title="Career CRM - Scheduling and Communication Pod")
+
+applications = [
+    {
+        "id": 1,
+        "candidate_id": 101,
+        "job_id": 201,
+        "company": "Microsoft",
+        "role": "SDE Intern",
+        "status": "Applied",
+        "interview": None,
+    },
+    {
+        "id": 2,
+        "candidate_id": 102,
+        "job_id": 202,
+        "company": "Google",
+        "role": "Backend Intern",
+        "status": "Shortlisted",
+        "interview": None,
+    },
+]
+
+activities = [
+    {
+        "id": 1,
+        "application_id": 1,
+        "activity_type": "notification",
+        "title": "Application submitted",
+        "message": "Your application for Microsoft has been received.",
+        "audience": "candidate",
+        "status": "open",
+        "due_date": None,
+    },
+    {
+        "id": 2,
+        "application_id": 2,
+        "activity_type": "status_update",
+        "title": "Candidate shortlisted",
+        "message": "Google moved this candidate to the shortlisted stage.",
+        "audience": "both",
+        "status": "open",
+        "due_date": None,
+    },
+]
+
+
+# ----- Helper functions -----
+
+def get_next_id(records):
+    return max((record["id"] for record in records), default=0) + 1
+
+
+def find_application_or_404(application_id: int):
+    for application in applications:
+        if application["id"] == application_id:
+            return application
+
+    raise HTTPException(status_code=404, detail="Application not found")
+
+
+def find_activity_or_404(activity_id: int):
+    for activity in activities:
+        if activity["id"] == activity_id:
+            return activity
+
+    raise HTTPException(status_code=404, detail="Activity not found")
+
+
+def create_activity_record(
+    application_id: int,
+    activity_type: ActivityType,
+    title: str,
+    message: str,
+    audience: Audience = "both",
+    due_date: Optional[str] = None,
+    status: ActivityStatus = "open",
+):
+    activity = {
+        "id": get_next_id(activities),
+        "application_id": application_id,
+        "activity_type": activity_type,
+        "title": title,
+        "message": message,
+        "audience": audience,
+        "status": status,
+        "due_date": due_date,
+    }
+    activities.append(activity)
+    return activity
+
+
+def build_interview_record(application, data: InterviewScheduleRequest):
+    return {
+        "application_id": application["id"],
+        "company": application["company"],
+        "role": application["role"],
+        "date": data.date,
+        "time": data.time,
+        "format": data.format,
+        "interviewer": data.interviewer,
+        "location": data.location,
+        "meeting_link": data.meeting_link,
+        "notes": data.notes,
+        "status": "Scheduled",
+    }
+
+
+def is_visible_to_audience(activity, audience: Optional[Audience]):
+    if audience is None:
+        return True
+
+    if activity["audience"] == "both":
+        return audience in ("candidate", "recruiter", "both")
+
+    return activity["audience"] == audience
+
+
+def filter_activity_records(
+    application_id: Optional[int] = None,
+    activity_type: Optional[ActivityType] = None,
+    activity_status: Optional[ActivityStatus] = None,
+    audience: Optional[Audience] = None,
+):
+    results = activities
+
+    if application_id is not None:
+        results = [
+            activity
+            for activity in results
+            if activity["application_id"] == application_id
+        ]
+
+    if activity_type is not None:
+        results = [
+            activity
+            for activity in results
+            if activity["activity_type"] == activity_type
+        ]
+
+    if activity_status is not None:
+        results = [
+            activity
+            for activity in results
+            if activity["status"] == activity_status
+        ]
+
+    return [
+        activity
+        for activity in results
+        if is_visible_to_audience(activity, audience)
+    ]
+
+
+# ----- Health and compatibility routes -----
+
+@app.get("/")
+def home():
+    return {
+        "message": "Scheduling and Communication pod is running",
+        "docs": "/docs",
+    }
+
+
 @app.get("/applications")
+def get_legacy_applications():
+    return applications
+
+
+# ----- Application lifecycle routes -----
+
+@app.get("/api/v1/applications")
 def get_applications():
     return applications
 
-@app.post("/applications")
-def add_application(app_data: Application):
-    new_application = {
-        "id": len(applications) + 1,
-        "company": app_data.company,
-        "role": app_data.role,
-        "status": app_data.status
+
+@app.post("/api/v1/applications")
+def create_application(data: ApplicationCreate):
+    application = {
+        "id": get_next_id(applications),
+        "candidate_id": data.candidate_id,
+        "job_id": data.job_id,
+        "company": data.company,
+        "role": data.role,
+        "status": "Applied",
+        "interview": None,
     }
-    applications.append(new_application)
-    return new_application
+    applications.append(application)
 
-@app.put("/applications/{application_id}")
-def update_application(application_id: int, updated_data: UpdateApplication):
-    for app in applications:
-        if app["id"] == application_id:
-            if updated_data.company is not None:
-                app["company"] = updated_data.company
-            if updated_data.role is not None:
-                app["role"] = updated_data.role
-            if updated_data.status is not None:
-                app["status"] = updated_data.status
-            return app
-    return {"error": "Application not found"}
+    activity = create_activity_record(
+        application["id"],
+        "notification",
+        "Application submitted",
+        f"Application submitted for {data.company}.",
+        "candidate",
+    )
 
-@app.delete("/applications/{application_id}")
-def delete_application(application_id: int):
-    for index, app in enumerate(applications):
-        if app["id"] == application_id:
-            applications.pop(index)
-            return {"message": f"Application {application_id} deleted"}
-    return {"error": "Application not found"}
+    return {"application": application, "activity": activity}
 
-recruiters = [
-    {"id": 1, "name": "Rahul Sharma", "company": "Microsoft", "email": "rahul@microsoft.com"},
-    {"id": 2, "name": "Priya Mehta", "company": "Google", "email": "priya@google.com"},
-]
 
-@app.get("/recruiters")
-def get_recruiters():
-    return recruiters
+@app.get("/api/v1/applications/{application_id}")
+def get_application(application_id: int):
+    return find_application_or_404(application_id)
 
-@app.post("/recruiters")
-def add_recruiter(rec_data: Recruiter):
-    new_recruiter = {
-        "id": len(recruiters) + 1,
-        "name": rec_data.name,
-        "company": rec_data.company,
-        "email": rec_data.email
-    }
-    recruiters.append(new_recruiter)
-    return new_recruiter
 
-@app.put("/recruiters/{recruiter_id}")
-def update_recruiter(recruiter_id: int, updated_data: Recruiter):
-    for rec in recruiters:
-        if rec["id"] == recruiter_id:
-            rec["name"] = updated_data.name
-            rec["company"] = updated_data.company
-            rec["email"] = updated_data.email
-            return rec
-    return {"error": "Recruiter not found"}
+@app.post("/api/v1/applications/{application_id}/status")
+def update_application_status(application_id: int, data: ApplicationStatusUpdate):
+    application = find_application_or_404(application_id)
+    old_status = application["status"]
+    application["status"] = data.status
 
-@app.delete("/recruiters/{recruiter_id}")
-def delete_recruiter(recruiter_id: int):
-    for index, rec in enumerate(recruiters):
-        if rec["id"] == recruiter_id:
-            recruiters.pop(index)
-            return {"message": f"Recruiter {recruiter_id} deleted"}
-    return {"error": "Recruiter not found"}
+    message = data.note or f"Status changed from {old_status} to {data.status}."
+    activity = create_activity_record(
+        application_id,
+        "status_update",
+        "Application status updated",
+        message,
+        "both",
+    )
 
-interviews = [
-    {"id": 1, "company": "Microsoft", "round": "Interview", "date": "2024-07-15", "status": "Scheduled"},
-    {"id": 2, "company": "Google", "round": "Technical Round", "date": "2024-07-20", "status": "Scheduled"},
-]
+    return {"application": application, "activity": activity}
 
-@app.get("/interviews")
+
+# ----- Interview scheduling routes -----
+
+@app.get("/api/v1/interviews")
 def get_interviews():
-    return interviews   
+    return [
+        application["interview"]
+        for application in applications
+        if application["interview"]
+    ]
 
-@app.post("/interviews")
-def add_interview(interview_data: Interview):
-    new_interview = {
-        "id": len(interviews) + 1,
-        "company": interview_data.company,
-        "round": interview_data.round,
-        "date": interview_data.date,
-        "status": interview_data.status
-    }
-    interviews.append(new_interview)
-    return new_interview
 
-@app.put("/interviews/{interview_id}")
-def update_interview(interview_id: int, updated_data: Interview):
-    for interview in interviews:
-        if interview["id"] == interview_id:
-            interview["company"] = updated_data.company
-            interview["round"] = updated_data.round
-            interview["date"] = updated_data.date
-            interview["status"] = updated_data.status
-            return interview
-    return {"error": "Interview not found"}
+@app.get("/api/v1/applications/{application_id}/interview")
+def get_application_interview(application_id: int):
+    application = find_application_or_404(application_id)
 
-@app.delete("/interviews/{interview_id}")
-def delete_interview(interview_id: int):
-    for index, interview in enumerate(interviews):
-        if interview["id"] == interview_id:
-            interviews.pop(index)
-            return {"message": f"Interview {interview_id} deleted"}
-    return {"error": "Interview not found"}
+    if application["interview"] is None:
+        raise HTTPException(status_code=404, detail="Interview not scheduled")
 
-tasks = [
-    {"id": 1, "task_name": "Prepare for Microsoft interview", "status": "Pending", "due_date": "2024-07-10", "priority": "High"},
-    {"id": 2, "task_name": "Follow up with Google recruiter", "status": "Completed", "due_date": "2024-07-15", "priority": "Medium"},
-]
+    return application["interview"]
 
-@app.get("/tasks")
-def get_tasks():
-    return tasks
 
-@app.post("/tasks")
-def add_task(task_data: Task):
-    new_task = {
-        "id": len(tasks) + 1,
-        "task_name": task_data.task_name,
-        "status": task_data.status,
-        "due_date": task_data.due_date,
-        "priority": task_data.priority
-    }
-    tasks.append(new_task)
-    return new_task
+@app.post("/api/v1/applications/{application_id}/interviews")
+def schedule_interview(application_id: int, data: InterviewScheduleRequest):
+    application = find_application_or_404(application_id)
+    interview = build_interview_record(application, data)
 
-@app.put("/tasks/{task_id}")
-def update_task(task_id: int, updated_data: Task):
-    for task in tasks:
-        if task["id"] == task_id:
-            task["task_name"] = updated_data.task_name
-            task["status"] = updated_data.status
-            task["due_date"] = updated_data.due_date
-            task["priority"] = updated_data.priority
-            return task
-    return {"error": "Task not found"}
+    application["interview"] = interview
+    application["status"] = "Interview Scheduled"
 
-@app.delete("/tasks/{task_id}")
-def delete_task(task_id: int):
-    for index, task in enumerate(tasks):
-        if task["id"] == task_id:
-            tasks.pop(index)
-            return {"message": f"Task {task_id} deleted"}
-    return {"error": "Task not found"}
+    activity = create_activity_record(
+        application_id,
+        "interview_confirmation",
+        "Interview scheduled",
+        f"{application['company']} interview scheduled on {data.date} at {data.time}.",
+        "both",
+    )
 
-followups = [
-    {"id": 1, "company": "Microsoft", "date": "2024-07-12", "notes": "Send thank you email after interview", "status": "Pending","type": "Email"}, 
-    {"id": 2, "company": "Google", "date": "2024-07-18", "notes": "Follow up on application status", "status": "Pending","type": "Call"},
-] 
+    return {"interview": interview, "confirmation": activity}
 
-@app.get("/followups")
-def get_follow_ups():
-    return followups
 
-@app.post("/followups")
-def add_follow_up(followup_data: FollowUp):
-    new_followup = {
-        "id": len(followups) + 1,
-        "company": followup_data.company,
-        "date": followup_data.date,
-        "notes": followup_data.notes,
-        "status": followup_data.status,
-        "type": followup_data.type
-    }
-    followups.append(new_followup)
-    return new_followup
+@app.put("/api/v1/applications/{application_id}/interviews")
+def reschedule_interview(application_id: int, data: InterviewScheduleRequest):
+    application = find_application_or_404(application_id)
 
-@app.put("/followups/{followup_id}")
-def update_follow_up(followup_id: int, updated_data: FollowUp):
-    for followup in followups:
-        if followup["id"] == followup_id:
-            followup["company"] = updated_data.company
-            followup["date"] = updated_data.date
-            followup["notes"] = updated_data.notes
-            followup["status"] = updated_data.status
-            followup["type"] = updated_data.type
-            return followup
-    return {"error": "Follow-up not found"}
+    if application["interview"] is None:
+        raise HTTPException(status_code=404, detail="Interview not scheduled")
 
-@app.delete("/followups/{followup_id}")
-def delete_follow_up(followup_id: int):
-    for index, followup in enumerate(followups):
-        if followup["id"] == followup_id:
-            followups.pop(index)
-            return {"message": f"Follow-up {followup_id} deleted"}
-    return {"error": "Follow-up not found"}
+    interview = build_interview_record(application, data)
+    application["interview"] = interview
+
+    activity = create_activity_record(
+        application_id,
+        "interview_confirmation",
+        "Interview rescheduled",
+        f"{application['company']} interview moved to {data.date} at {data.time}.",
+        "both",
+    )
+
+    return {"interview": interview, "confirmation": activity}
+
+
+@app.post("/api/v1/applications/{application_id}/interviews/cancel")
+def cancel_interview(application_id: int):
+    application = find_application_or_404(application_id)
+
+    if application["interview"] is None:
+        raise HTTPException(status_code=404, detail="Interview not scheduled")
+
+    application["interview"]["status"] = "Cancelled"
+    application["status"] = "Under Review"
+
+    activity = create_activity_record(
+        application_id,
+        "notification",
+        "Interview cancelled",
+        f"{application['company']} interview has been cancelled.",
+        "both",
+    )
+
+    return {"application": application, "notification": activity}
+
+
+# ----- Activity, notification, and action item routes -----
+
+@app.get("/api/v1/applications/{application_id}/activities")
+def get_application_activities(application_id: int):
+    find_application_or_404(application_id)
+    return filter_activity_records(application_id=application_id)
+
+
+@app.post("/api/v1/applications/{application_id}/activities")
+def create_application_activity(application_id: int, data: ActivityCreate):
+    find_application_or_404(application_id)
+    return create_activity_record(
+        application_id,
+        data.activity_type,
+        data.title,
+        data.message,
+        data.audience,
+        data.due_date,
+    )
+
+
+@app.patch("/api/v1/activities/{activity_id}")
+def update_activity(activity_id: int, data: ActivityUpdate):
+    activity = find_activity_or_404(activity_id)
+
+    if data.status is not None:
+        activity["status"] = data.status
+
+    if data.message is not None:
+        activity["message"] = data.message
+
+    return activity
+
+
+@app.get("/api/v1/activities")
+def get_activities(
+    application_id: Optional[int] = None,
+    activity_type: Optional[ActivityType] = None,
+    activity_status: Optional[ActivityStatus] = None,
+    audience: Optional[Audience] = None,
+):
+    return filter_activity_records(
+        application_id,
+        activity_type,
+        activity_status,
+        audience,
+    )
+
+
+@app.get("/api/v1/notifications")
+def get_notifications(audience: Optional[Audience] = None):
+    return [
+        activity
+        for activity in filter_activity_records(audience=audience)
+        if activity["activity_type"] in ("notification", "status_update")
+    ]
+
+
+@app.get("/api/v1/action-items")
+def get_action_items(audience: Optional[Audience] = None):
+    return [
+        activity
+        for activity in filter_activity_records(
+            activity_status="open",
+            audience=audience,
+        )
+        if activity["activity_type"] in ("task", "follow_up", "reminder")
+    ]
+
+
+@app.post("/api/v1/applications/{application_id}/tasks")
+def create_task(application_id: int, data: ActivityCreate):
+    find_application_or_404(application_id)
+    return create_activity_record(
+        application_id,
+        "task",
+        data.title,
+        data.message,
+        data.audience,
+        data.due_date,
+    )
+
+
+@app.post("/api/v1/applications/{application_id}/follow-ups")
+def create_follow_up(application_id: int, data: ActivityCreate):
+    find_application_or_404(application_id)
+    return create_activity_record(
+        application_id,
+        "follow_up",
+        data.title,
+        data.message,
+        data.audience,
+        data.due_date,
+    )
