@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from datetime import datetime, timezone
 from typing import Literal, Optional
 
 
@@ -27,6 +28,7 @@ ActivityType = Literal[
 ActivityStatus = Literal["open", "completed", "cancelled"]
 Audience = Literal["candidate", "recruiter", "both", "internal"]
 InterviewFormat = Literal["online", "offline"]
+SenderType = Literal["candidate", "recruiter"]
 
 
 # ----- Request models -----
@@ -64,6 +66,53 @@ class ActivityCreate(BaseModel):
 class ActivityUpdate(BaseModel):
     status: Optional[ActivityStatus] = None
     message: Optional[str] = None
+
+
+class ConversationCreate(BaseModel):
+    application_id: int
+
+
+class ConversationRead(BaseModel):
+    id: int
+    application_id: int
+    created_at: str
+
+
+class MessageCreate(BaseModel):
+    sender_type: SenderType
+    sender_id: int
+    content: str
+
+
+class MessageRead(BaseModel):
+    id: int
+    conversation_id: int
+    sender_type: SenderType
+    sender_id: int
+    content: str
+    created_at: str
+
+
+CONVERSATION_TABLE_BLUEPRINT = {
+    "table_name": "conversations",
+    "columns": {
+        "id": "integer primary key",
+        "application_id": "integer unique foreign key -> applications.id",
+        "created_at": "datetime",
+    },
+}
+
+MESSAGE_TABLE_BLUEPRINT = {
+    "table_name": "messages",
+    "columns": {
+        "id": "integer primary key",
+        "conversation_id": "integer foreign key -> conversations.id",
+        "sender_type": "candidate | recruiter",
+        "sender_id": "integer",
+        "content": "text",
+        "created_at": "datetime",
+    },
+}
 
 
 # ----- App and sample data -----
@@ -114,11 +163,18 @@ activities = [
     },
 ]
 
+conversations = []
+messages = []
+
 
 # ----- Helper functions -----
 
 def get_next_id(records):
     return max((record["id"] for record in records), default=0) + 1
+
+
+def current_timestamp():
+    return datetime.now(timezone.utc).isoformat()
 
 
 def find_application_or_404(application_id: int):
@@ -135,6 +191,20 @@ def find_activity_or_404(activity_id: int):
             return activity
 
     raise HTTPException(status_code=404, detail="Activity not found")
+
+
+def find_conversation_or_404(conversation_id: int):
+    for conversation in conversations:
+        if conversation["id"] == conversation_id:
+            return conversation
+    raise HTTPException(status_code=404, detail="Conversation not found")
+
+
+def find_conversation_by_application(application_id: int):
+    for conversation in conversations:
+        if conversation["application_id"] == application_id:
+            return conversation
+    return None
 
 
 def create_activity_record(
@@ -158,6 +228,52 @@ def create_activity_record(
     }
     activities.append(activity)
     return activity
+
+
+def get_or_create_conversation_record(application_id: int):
+    find_application_or_404(application_id)
+    existing_conversation = find_conversation_by_application(application_id)
+    if existing_conversation is not None:
+        return existing_conversation
+
+    conversation = {
+        "id": get_next_id(conversations),
+        "application_id": application_id,
+        "created_at": current_timestamp(),
+    }
+    conversations.append(conversation)
+    return conversation
+
+
+def create_message_record(conversation_id: int, data: MessageCreate):
+    conversation = find_conversation_or_404(conversation_id)
+    message = {
+        "id": get_next_id(messages),
+        "conversation_id": conversation_id,
+        "sender_type": data.sender_type,
+        "sender_id": data.sender_id,
+        "content": data.content,
+        "created_at": current_timestamp(),
+    }
+    messages.append(message)
+
+    notification = create_activity_record(
+        conversation["application_id"],
+        "notification",
+        "New message received",
+        "New message received",
+        "both",
+    )
+    return {"message": message, "notification": notification}
+
+
+def get_message_records(conversation_id: int):
+    find_conversation_or_404(conversation_id)
+    return [
+        message
+        for message in messages
+        if message["conversation_id"] == conversation_id
+    ]
 
 
 def build_interview_record(application, data: InterviewScheduleRequest):
@@ -467,6 +583,29 @@ def create_follow_up(application_id: int, data: ActivityCreate):
         data.audience,
         data.due_date,
     )
+
+
+# ----- Candidate <-> Recruiter Communication -----
+
+@app.post("/api/v1/conversations")
+def create_conversation(data: ConversationCreate):
+    return get_or_create_conversation_record(data.application_id)
+
+
+@app.get("/api/v1/conversations/{conversation_id}")
+def get_conversation(conversation_id: int):
+    return find_conversation_or_404(conversation_id)
+
+
+@app.post("/api/v1/conversations/{conversation_id}/messages")
+def send_message(conversation_id: int, data: MessageCreate):
+    return create_message_record(conversation_id, data)
+
+
+@app.get("/api/v1/conversations/{conversation_id}/messages")
+def get_messages(conversation_id: int):
+    return get_message_records(conversation_id)
+
 
 # ----- Calendar / Availability -----
 
