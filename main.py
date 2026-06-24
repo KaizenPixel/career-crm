@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from datetime import datetime, timezone
 from typing import Literal, Optional
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 
 # ----- Allowed values -----
@@ -92,6 +93,8 @@ class MessageRead(BaseModel):
     content: str
     created_at: str
 
+
+# ----- Future database table blueprints -----
 
 CONVERSATION_TABLE_BLUEPRINT = {
     "table_name": "conversations",
@@ -611,11 +614,13 @@ def get_messages(conversation_id: int):
 
 AvailabilityStatus = Literal["available", "confirmed", "cancelled"]
 
+
 class AvailabilitySlot(BaseModel):
     date: str
     time: str
     format: InterviewFormat
     notes: Optional[str] = None
+
 
 class ConfirmSlot(BaseModel):
     slot_index: int
@@ -623,44 +628,55 @@ class ConfirmSlot(BaseModel):
     meeting_link: Optional[str] = None
     location: Optional[str] = None
 
+
 availability_slots = {}
+
 
 @app.post("/api/v1/applications/{application_id}/availability")
 def add_availability(application_id: int, data: AvailabilitySlot):
     application = find_application_or_404(application_id)
+
     if application_id not in availability_slots:
         availability_slots[application_id] = []
+
     slot = {
         "index": len(availability_slots[application_id]),
         "date": data.date,
         "time": data.time,
         "format": data.format,
         "notes": data.notes,
-        "status": "available"
+        "status": "available",
     }
     availability_slots[application_id].append(slot)
+
     activity = create_activity_record(
         application_id,
         "notification",
         "Availability added",
         f"Candidate added availability slot on {data.date} at {data.time}.",
-        "recruiter"
+        "recruiter",
     )
+
     return {"slot": slot, "activity": activity}
+
 
 @app.get("/api/v1/applications/{application_id}/availability")
 def get_availability(application_id: int):
     find_application_or_404(application_id)
     return availability_slots.get(application_id, [])
 
+
 @app.post("/api/v1/applications/{application_id}/availability/confirm")
 def confirm_slot(application_id: int, data: ConfirmSlot):
     application = find_application_or_404(application_id)
     slots = availability_slots.get(application_id, [])
+
     if not slots or data.slot_index >= len(slots):
         raise HTTPException(status_code=404, detail="Slot not found")
+
     slot = slots[data.slot_index]
     slot["status"] = "confirmed"
+
     interview = {
         "application_id": application_id,
         "company": application["company"],
@@ -672,15 +688,17 @@ def confirm_slot(application_id: int, data: ConfirmSlot):
         "meeting_link": data.meeting_link,
         "location": data.location,
         "notes": slot["notes"],
-        "status": "Scheduled"
+        "status": "Scheduled",
     }
     application["interview"] = interview
     application["status"] = "Interview Scheduled"
+
     activity = create_activity_record(
         application_id,
         "interview_confirmation",
         "Interview confirmed",
         f"Interview confirmed on {slot['date']} at {slot['time']} with {data.interviewer}.",
-        "both"
+        "both",
     )
+
     return {"interview": interview, "confirmation": activity}
