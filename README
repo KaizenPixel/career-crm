@@ -1,75 +1,49 @@
-# Career CRM — Scheduling & Communication Pod
+Career CRM — Scheduling & Communication Pod
 
-> Part of the **Folio AI-Powered Recruitment Platform** — a next-generation hiring ecosystem built for designers and creative professionals.
+Part of the Folio AI-Powered Recruitment Platform — a next-generation hiring ecosystem built for designers and creative professionals.
 
----
 
-## What This Is
-
-The Scheduling & Communication Pod is the career management backbone of the Folio platform. It handles everything that happens *after* a candidate discovers an opportunity — tracking applications, scheduling interviews, managing recruiter relationships, logging follow-ups, and enabling direct candidate-recruiter communication.
-
+What This Is
+The Scheduling & Communication Pod is the career management backbone of the Folio platform. It handles everything that happens after a candidate discovers an opportunity — tracking applications, scheduling interviews, managing recruiter relationships, logging follow-ups, and enabling direct candidate-recruiter communication.
 Think of it as a personal CRM for your job search, built as a production-ready REST API.
 
----
+API Overview
+Show Image
+26 endpoints across 5 core modules, fully documented via Swagger at /docs.
 
-## Modules
-
-### Application Lifecycle
+Modules
+Application Lifecycle
 Track every application from submission to final decision.
-
-```
 GET    /api/v1/applications
 POST   /api/v1/applications
 GET    /api/v1/applications/{id}
 POST   /api/v1/applications/{id}/status
-```
+Pipeline: Applied → Viewed → Under Review → Shortlisted → Interview Scheduled → Selected → Rejected
 
-Pipeline: `Applied → Viewed → Under Review → Shortlisted → Interview Scheduled → Selected → Rejected`
-
----
-
-### Interview Scheduling
+Interview Scheduling
 Schedule, reschedule, and cancel interviews with full activity logging.
-
-```
 GET    /api/v1/interviews
 GET    /api/v1/applications/{id}/interview
 POST   /api/v1/applications/{id}/interviews
 PUT    /api/v1/applications/{id}/interviews
 POST   /api/v1/applications/{id}/interviews/cancel
-```
-
 Supports online and offline formats. Every action auto-logs a confirmation activity.
 
----
-
-### Calendar Availability
+Calendar Availability
 Candidate submits available slots. Recruiter confirms one. Interview is created automatically.
-
-```
 POST   /api/v1/applications/{id}/availability
 GET    /api/v1/applications/{id}/availability
 POST   /api/v1/applications/{id}/availability/confirm
-```
 
----
-
-### Candidate ↔ Recruiter Messaging
+Candidate ↔ Recruiter Messaging
 Threaded conversations tied to specific applications. Every message triggers a notification activity.
-
-```
 POST   /api/v1/conversations
 GET    /api/v1/conversations/{id}
 POST   /api/v1/conversations/{id}/messages
 GET    /api/v1/conversations/{id}/messages
-```
 
----
-
-### Activities, Notifications & Action Items
-Every event in the system — status changes, interview confirmations, messages, follow-ups — is logged as an activity record.
-
-```
+Activities, Notifications & Action Items
+Every event in the system is logged as an activity record.
 GET    /api/v1/activities
 POST   /api/v1/applications/{id}/activities
 PATCH  /api/v1/activities/{id}
@@ -77,83 +51,20 @@ GET    /api/v1/notifications
 GET    /api/v1/action-items
 POST   /api/v1/applications/{id}/tasks
 POST   /api/v1/applications/{id}/follow-ups
-```
 
----
+PRD Coverage
+RequirementDescriptionStatusSC-01Application lifecycle tracking✅SC-02Interview scheduling with calendar integration✅SC-03Online/offline formats + confirmations✅SC-04Task management✅SC-05Follow-up tracking✅SC-06Notifications✅SC-07Candidate-recruiter messaging✅
 
-## PRD Coverage
+Tech Stack
+LayerTechnologyLanguagePython 3.14FrameworkFastAPIValidationPydantic v2 + Literal typesServerUvicornDocsSwagger / OpenAPI (auto-generated)DatabaseFirebase Firestore (integration pending)
 
-| Requirement | Description | Status |
-|---|---|---|
-| SC-01 | Application lifecycle tracking | ✅ |
-| SC-02 | Interview scheduling with calendar integration | ✅ |
-| SC-03 | Online/offline formats + confirmations | ✅ |
-| SC-04 | Task management | ✅ |
-| SC-05 | Follow-up tracking | ✅ |
-| SC-06 | Notifications | ✅ |
-| SC-07 | Candidate-recruiter messaging | ✅ |
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Language | Python 3.14 |
-| Framework | FastAPI |
-| Validation | Pydantic v2 + Literal types |
-| Server | Uvicorn |
-| Docs | Swagger / OpenAPI (auto-generated) |
-| Database | Firebase Firestore (integration pending) |
-| Version Control | Git / GitHub |
-
----
-
-## Running Locally
-
-```bash
-# Install dependencies
-pip install fastapi uvicorn
-
-# Start the server
+Running Locally
+bashpip install fastapi uvicorn
 python -m uvicorn main:app --reload
+Open docs at http://127.0.0.1:8000/docs
 
-# Open API docs
-http://127.0.0.1:8000/docs
-```
-
----
-
-## Project Structure
-
-```
-career-crm/
-  main.py          # All endpoints, models, and logic
-  README.md
-```
-
----
-
-## Part of a Larger Platform
-
-This pod integrates with:
-
-| Pod | Connection |
-|---|---|
-| Candidate Experience | Receives candidate profile and application actions |
-| AI Matchmaking | Receives matched job suggestions to track |
-| Assessment & Intelligence | Receives assessment results and deadlines |
-| Recruiter Platform | Sends interview schedules and candidate status |
-| Shared Systems & Ops | Firebase auth, shared database, notifications |
-
----
-
-## Built By
-
-**Samarth** — Scheduling & Communication Pod  
-Folio AI-Powered Recruitment Platform  
-Mentor: Harshit Desai  
-
----
-
-*Built during a summer internship as part of a 7-pod collaborative platform project. First backend project. Started from zero Python knowledge.*
+Built By
+Samarth — Scheduling & Communication Pod
+Folio AI-Powered Recruitment Platform
+Mentor: Harshit Desai
+Built during a summer internship. First backend project. Started from zero Python knowledge.
